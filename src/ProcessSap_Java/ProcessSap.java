@@ -1,6 +1,8 @@
 package ProcessSap_Java;
 
+import ConnectionDB.DBConnect;
 import ConnectionSAP.ConnectSap;
+import DBOperations.DBCrud;
 import com.sap.conn.jco.AbapException;
 import com.sap.conn.jco.JCoDestination;
 import com.sap.conn.jco.JCoDestinationManager;
@@ -9,6 +11,10 @@ import com.sap.conn.jco.JCoFunction;
 import com.sap.conn.jco.JCoParameterList;
 import com.sap.conn.jco.JCoStructure;
 import com.sap.conn.jco.JCoTable;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 
 /**
  *
@@ -16,62 +22,85 @@ import com.sap.conn.jco.JCoTable;
  */
 public class ProcessSap {
 
-    public static void Bapi_getIns(String insplot, String insoper, String inspchar) throws JCoException {
-        JCoDestination destination = JCoDestinationManager.getDestination(ConnectSap.ABAP_AS_POOLED);
-        JCoFunction function = destination.getRepository().getFunction("BAPI_INSPCHAR_GETRESULT");
+    DBConnect db;
+    Connection con;
+    Statement q;
+    ResultSet result;
 
-        function.getImportParameterList().setValue("INSPLOT", "10000000522");
-        function.getImportParameterList().setValue("INSPOPER", "0010");
-        function.getImportParameterList().setValue("INSPCHAR", "0020");
-        if (function == null) {
-            throw new RuntimeException("BAPI_INSPOPER_RECORDRESULTS not found in SAP.");
-        }
+    public void Bapi_getLotInspeccion() throws SQLException {
+        db = new DBConnect();
+        con = db.Connect();
         try {
-            function.execute(destination);
-        } catch (AbapException e) {
-            System.out.println(e.toString());
-            return;
+
+            q = con.createStatement();
+
+            JCoDestination destination = JCoDestinationManager.getDestination(ConnectSap.ABAP_AS_POOLED);
+            JCoFunction function = destination.getRepository().getFunction("BAPI_INSPLOT_GETLIST");
+
+            function.getImportParameterList().setValue("MAX_ROWS", "0");
+            //function.getImportParameterList().setValue("MATERIAL", "000000000035000012");
+            //function.getImportParameterList().setValue("CREAT_DAT","20150801");
+            if (function == null) {
+                throw new RuntimeException("BAPI_INSPLOT_GETLIST  not found in SAP.");
+            }
+            try {
+                function.execute(destination);
+            } catch (AbapException e) {
+                System.out.println("Error en bapi: " + e.toString());
+                return;
+            }
+
+            JCoTable codes = function.getTableParameterList().getTable("INSPLOT_LIST");
+            for (int i = 0; i < codes.getNumRows(); i++) {
+                codes.setRow(i);
+
+                String insplot = codes.getString("INSPLOT"),plant = codes.getString("PLANT"),orden = codes.getString("ORDER_NO"),
+                        inspoints = codes.getString("INSPPOINTS"),material = codes.getString("MATERIAL"),batch = codes.getString("BATCH"),
+                        txtlot = codes.getString("TXT_LOT"),txtmaterial = codes.getString("TXT_MAT"),creatdat = codes.getString("CREAT_DAT");
+
+                System.out.println("Lote de inspección: " + insplot
+                        + '\t' + "Planta: " + plant
+                        + '\t' + "Orden: " + orden
+                        + '\t' + "Puntos insp: " + inspoints
+                        + '\t' + "Material: " + material
+                        + '\t' + "Lote: " + batch
+                        + '\t' + "Texto Breve: " + txtlot
+                        + '\t' + "Texto de material: " + txtmaterial
+                        + '\t' + "Fecha creación: " + creatdat);
+
+                new DBCrud().insertLotInsp(q, insplot, plant, orden, inspoints, material, batch, txtlot, txtmaterial, creatdat);
+            }
+        } catch (JCoException ex) {
+            System.err.println("Error en lista de inspeccion: " + ex.getMessage());
         }
-
-        JCoStructure resultados = function.getExportParameterList().getStructure("CHAR_RESULT");
-
-        System.out.println(resultados.getString("INSPLOT"));
-        System.out.println(resultados.getString("MEAN_VALUE"));     //si son decimales (Datos cuatitativos)
-        System.out.println(resultados.getString("ORIGINAL_INPUT")); // si son decimales (Datos cuantitativos)
-        System.out.println(resultados.getString("CODE1")); // resultado cuando solo es texto (solo codigo)
-        System.out.println(resultados.getString("CODE_GRP1"));// Texto breve cuando es texto
-        System.out.println("Cerrado: " + resultados.getString("CLOSED")); //X
-        System.out.println("No valido: " + resultados.getString("CHAR_INVAL"));
-        System.out.println("Resultado: " + resultados.getString("EVALUATION")); // A
-        System.out.println("Valoración: " + resultados.getString("EVALUATED")); // X
-        System.out.println(resultados.getString("START_DATE"));
-        System.out.println(resultados.getString("START_TIME"));
-        System.out.println(resultados.getString("INSPECTOR"));
-        System.out.println(resultados.getString("REMARK"));
+        con.close();
+        q.close();
     }
 
-    public static void Bapi_getOperacion() throws JCoException {
+    public static void Bapi_getOperacion(String lotInsp) throws JCoException {
         JCoDestination destination = JCoDestinationManager.getDestination(ConnectSap.ABAP_AS_POOLED);
-        JCoFunction function = destination.getRepository().getFunction("BAPI_INSPPOINT_GETLIST");
+        JCoFunction function = destination.getRepository().getFunction("BAPI_INSPOPER_GETLIST");
 
-        function.getImportParameterList().setValue("INSPLOT", "30000000476");
-        function.getImportParameterList().setValue("INSPOPER", "0020");
+        function.getImportParameterList().setValue("INSPLOT", lotInsp);
 
         if (function == null) {
-            throw new RuntimeException("QIBP_INSPOPER_GETLIST  not found in SAP.");
+            throw new RuntimeException("BAPI_INSPOPER_GETLIST  not found in SAP.");
         }
         try {
             function.execute(destination);
         } catch (AbapException e) {
-            System.out.println("Error en bapi: " + e.toString());
+            System.out.println("Error en bapi BAPI_INSPOPER_GETLIST: " + e.toString());
             return;
         }
 
-        JCoTable codes = function.getTableParameterList().getTable("INSPPOINT_LIST");
+        JCoTable codes = function.getTableParameterList().getTable("INSPOPER_LIST");
         for (int i = 0; i < codes.getNumRows(); i++) {
             codes.setRow(i);
-            System.out.println("Lote de inspección: " + codes.getString("INSPLOT")
-                    + '\t' + "Operación: " + codes.getString("INSPPOINT"));
+            System.out.println("Operaciones de Lot. Inspección: " + codes.getString("INSPOPER")
+                    + '\t' + "Planta: " + codes.getString("PLANT")
+                    + '\t' + "Txt breve: " + codes.getString("TXT_OPER")
+                    + '\t' + "Puesto de trabajo: " + codes.getString("WORKCENTER")
+                    + '\t' + "Txt puesto de trab.: " + codes.getString("TXT_WORKC"));
         }
     }
 
@@ -99,14 +128,47 @@ public class ProcessSap {
         JCoTable codes = function.getTableParameterList().getTable("INSPCHAR_LIST");
         for (int i = 0; i < codes.getNumRows(); i++) {
             codes.setRow(i);
-            System.out.println("Lote de inspección: " + codes.getString("INSPLOT")
-                    + '\t' + "Operación: " + codes.getString("INSPOPER")
-                    + '\t' + "Caracteristica: " + codes.getString("INSPCHAR")
+            System.out.println("Caracteristica: " + codes.getString("INSPCHAR")
                     + '\t' + "Status: " + codes.getString("STATUS")
                     + '\t' + "Descripción: " + codes.getString("CHAR_DESCR")
                     + '\t' + "Tipo: " + codes.getString("CHAR_TYPE"));
 
         }
+    }
+
+    public static void Bapi_getIns(String insplot, String insoper, String inspchar) throws JCoException {
+        JCoDestination destination = JCoDestinationManager.getDestination(ConnectSap.ABAP_AS_POOLED);
+        JCoFunction function = destination.getRepository().getFunction("BAPI_INSPCHAR_GETRESULT");
+
+        function.getImportParameterList().setValue("INSPLOT", insplot);
+        function.getImportParameterList().setValue("INSPOPER", insoper);
+        function.getImportParameterList().setValue("INSPCHAR", inspchar);
+
+        if (function == null) {
+            throw new RuntimeException("BAPI_INSPCHAR_GETRESULT not found in SAP.");
+        }
+        try {
+            function.execute(destination);
+        } catch (AbapException e) {
+            System.out.println(e.toString());
+            return;
+        }
+
+        JCoStructure resultados = function.getExportParameterList().getStructure("CHAR_RESULT");
+
+        System.out.println(resultados.getString("INSPLOT"));
+        System.out.println(resultados.getString("MEAN_VALUE"));     //si son decimales (Datos cuatitativos)
+        System.out.println(resultados.getString("ORIGINAL_INPUT")); // si son decimales (Datos cuantitativos)
+        System.out.println(resultados.getString("CODE1")); // resultado cuando solo es texto (solo codigo)
+        System.out.println(resultados.getString("CODE_GRP1"));// Texto breve cuando es texto
+        System.out.println("Cerrado: " + resultados.getString("CLOSED")); //X
+        System.out.println("No valido: " + resultados.getString("CHAR_INVAL"));
+        System.out.println("Resultado: " + resultados.getString("EVALUATION")); // A
+        System.out.println("Valoración: " + resultados.getString("EVALUATED")); // X
+        System.out.println(resultados.getString("START_DATE"));
+        System.out.println(resultados.getString("START_TIME"));
+        System.out.println(resultados.getString("INSPECTOR"));
+        System.out.println(resultados.getString("REMARK"));
     }
 
     public static void Bapi_getResult() throws JCoException {
@@ -225,41 +287,4 @@ public class ProcessSap {
         }
     }
 
-    public static void Bapi_getLotInspeccion() {
-
-        try {
-            JCoDestination destination = JCoDestinationManager.getDestination(ConnectSap.ABAP_AS_POOLED);
-            JCoFunction function = destination.getRepository().getFunction("BAPI_INSPLOT_GETLIST");
-            
-             //function.getImportParameterList().setValue("MAX_ROWS", "0");
-             //function.getImportParameterList().setValue("MATERIAL", "000000000035000128");
-             //function.getImportParameterList().setValue("CREAT_DAT","20150801");
-            
-            if (function == null) {
-                throw new RuntimeException("BAPI_INSPLOT_GETLIST  not found in SAP.");
-            }
-            try {
-                function.execute(destination);
-            } catch (AbapException e) {
-                System.out.println("Error en bapi: " + e.toString());
-                return;
-            }
-
-            JCoTable codes = function.getTableParameterList().getTable("INSPLOT_LIST");
-            for (int i = 0; i < codes.getNumRows(); i++) {
-                codes.setRow(i);
-                System.out.println("Lote de inspección: " + codes.getString("INSPLOT")
-                        + '\t' + "Planta: " + codes.getString("PLANT")
-                        + '\t' + "Orden: " + codes.getString("ORDER_NO")
-                        + '\t' + "Material: " + codes.getString("MATERIAL")
-                        + '\t' + "Lote: " + codes.getString("BATCH")
-                        + '\t' + "Texto Breve: " + codes.getString("TXT_LOT")
-                        + '\t' + "Texto de material: " + codes.getString("TXT_MAT")
-                        + '\t' + "Fecha creación: " + codes.getString("CREAT_DAT"));
-            }
-        } catch (JCoException ex) {
-            System.err.println("Error en lista de inspeccion: " + ex.getMessage());
-        }
-
-    }
 }
